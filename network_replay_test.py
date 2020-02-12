@@ -125,8 +125,9 @@ def update_currents(currents, delta_t, intrinsic_e, weights, rates, I_inh, I_the
 	return currents_update
 
 
-def update_intrinsic_e(intrinsic_e, intrinsic_e_t, intrinsic_e_r, delta_t, rates):
-	tau_e = 5 # s
+def update_intrinsic_e(intrinsic_e_t, intrinsic_e_r, delta_t, rates):
+	tau_e = 120 # s
+	eta = 1
 	intrinsic_e_update = np.zeros(network_size)
 	intrinsic_e_t_update = intrinsic_e_t.copy()
 	intrinsic_e_r_update = intrinsic_e_r.copy()
@@ -137,10 +138,10 @@ def update_intrinsic_e(intrinsic_e, intrinsic_e_t, intrinsic_e_r, delta_t, rates
 			intrinsic_e_t_update[i] = 0
 		else:
 			intrinsic_e_r_update[i] = r_e
-			intrinsic_e_t_update += delta_t
-		intrinsic_e_update[i] =
+			intrinsic_e_t_update[i] += delta_t
+		intrinsic_e_update[i] = eta * intrinsic_e_r_update[i] * np.exp(-intrinsic_e_t_update[i] / tau_e)
 
-	return intrinsic_e_update
+	return intrinsic_e_update, intrinsic_e_t_update, intrinsic_e_r_update
 	# return np.ones(network_size)
 
 def update_I_inh(I_inh, delta_t, w_inh, rates):
@@ -166,7 +167,7 @@ def compute_place_cell_activities(coord_x, coord_y, reward, movement = False):
 	d = 0.1  # m
 	no_cells_per_m = int(np.sqrt(network_size)) / 2
 	no_cell_it = int(np.sqrt(network_size))  # the number of cells along one row of the network
-	if movement:
+	if movement or reward != 0:
 		C = 40 # Hz
 	else:
 		C = 0 # Hz
@@ -201,7 +202,9 @@ currents_next = np.zeros(network_size)
 intrinsic_e = np.ones(network_size)
 intrinsic_e_next = np.zeros(network_size)
 intrinsic_e_t = np.zeros(network_size)
+intrinsic_e_t_next = np.zeros(network_size)
 intrinsic_e_r = np.zeros(network_size)
+intrinsic_e_r_next = np.zeros(network_size)
 
 network_weights = initialise_weights()
 network_weights_next = np.zeros((network_size, 8))
@@ -214,7 +217,7 @@ I_theta = 0
 reward_val = 0
 
 # get trajectory data
-trajectory = np.load("data/trajectory_data.npy")
+trajectory = np.load("data/trajectory_data_new.npy")
 place_cell_list = []
 currents_list = []
 I_inh_list = []
@@ -237,13 +240,16 @@ for step in range(1, np.size(trajectory, 0)):
 	currents = currents_next.copy()
 	intrinsic_e = intrinsic_e_next.copy()
 	intrinsic_e_t = intrinsic_e_t_next.copy()
+	intrinsic_e_r = intrinsic_e_r_next.copy()
+
 	I_inh = I_inh_next
 
 	# update all the network variables
 	I_place = compute_place_cell_activities(trajectory[step, 0], trajectory[step, 1], reward_val, movement)
 	I_inh_next = update_I_inh(I_inh, delta_t, w_inh, rates)
 	currents_next = update_currents(currents, delta_t, intrinsic_e, network_weights, rates, I_inh, 0, I_place)
-	intrinsic_e_next = update_intrinsic_e(intrinsic_e, delta_t, rates)
+	intrinsic_e_next, intrinsic_e_t_next, intrinsic_e_r_next = update_intrinsic_e(intrinsic_e_t,
+	                                                                              intrinsic_e_r, delta_t, rates)
 	rates_next = compute_rates(currents_next)
 
 	place_cell_list.append(I_place)
@@ -252,6 +258,35 @@ for step in range(1, np.size(trajectory, 0)):
 	intrinsic_e_list.append(intrinsic_e_next)
 	I_inh_list.append(I_inh_next)
 
+# now I need to run a replay event here once the forward trajectory has completed
+I_p = compute_place_cell_activities(trajectory[-1, 0], trajectory[-1, 1], reward=1, movement=False) * 20
+for replay_step in range(100):
+	if replay_step < 30: # place pulses every 1 sec
+		I_place = I_p
+	else:
+		I_place = np.zeros(network_size)
+	# set variables at the next time step to the ones now
+	network_weights = network_weights_next.copy()
+	rates = rates_next.copy()
+	currents = currents_next.copy()
+	intrinsic_e = intrinsic_e_next.copy()
+	intrinsic_e_t = intrinsic_e_t_next.copy()
+	intrinsic_e_r = intrinsic_e_r_next.copy()
+
+	I_inh = I_inh_next
+
+	# update all the network variables
+	I_inh_next = update_I_inh(I_inh, delta_t, w_inh, rates)
+	currents_next = update_currents(currents, delta_t, intrinsic_e, network_weights, rates, I_inh, 0, I_place)
+	intrinsic_e_next, intrinsic_e_t_next, intrinsic_e_r_next = update_intrinsic_e(intrinsic_e_t,
+	                                                                              intrinsic_e_r, delta_t, rates)
+	rates_next = compute_rates(currents_next)
+
+	place_cell_list.append(I_place)
+	rates_list.append(rates_next)
+	currents_list.append(currents_next)
+	intrinsic_e_list.append(intrinsic_e_next)
+	I_inh_list.append(I_inh_next)
 
 def plot_func(j):
 	# This function is passed into the FuncAnimation class, which then provides the live plotting
@@ -265,11 +300,11 @@ def plot_func(j):
 	plt.clf()
 	# plt.contourf(plot, cmap=plt.cm.hot)
 	# plt.cla()
-	plt.imshow(plot, cmap='hot', interpolation='nearest' ) #, vmin=0, vmax=3
+	plt.imshow(plot, cmap='hot', interpolation='nearest', vmin=0, vmax=20 ) #
 	plt.colorbar()
 	plt.draw()
 	# plt.pause(0.1)
 
-ani = FuncAnimation(plt.gcf(), plot_func, interval=100, frames=range(50,99), repeat=False)
+ani = FuncAnimation(plt.gcf(), plot_func, interval=100, frames=range(50,199), repeat=False)
 
 plt.show()

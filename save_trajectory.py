@@ -43,8 +43,8 @@ while not rospy.core.is_shutdown():
 	coords_timeline = np.roll(coords_timeline, -1, 0)
 	coords_timeline[-1] = coords
 	rate.sleep()
-	print(reward_val)
 	if reward_val != 0:
-		np.save("data/trajectory_data.npy", coords_timeline)
+		np.save("data/trajectory_data_new.npy", coords_timeline)
 		print("reward found... saving trajectory data and quitting")
 		break
+
