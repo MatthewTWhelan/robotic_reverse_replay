@@ -1,4 +1,8 @@
 #!/usr/bin/python
+'''
+A script for storing the previous 10 seconds of Miro's trajectory
+'''
+
 import rospy
 from std_msgs.msg import UInt8
 from geometry_msgs.msg import Pose2D
@@ -35,8 +39,8 @@ print ("subscribe", topic)
 sub_coords = rospy.Subscriber(topic, Pose2D, callback_body_pose, queue_size=5, tcp_nodelay=True)
 coords = np.zeros(2)  # pos 0 is x coordinate and pos 1 is y coordinate
 
-coords_timeline = np.zeros((100, 2)) # at a rate of 10 Hz, we will have 10 data points per second, making 100 over
-# 10 seconds
+coords_timeline = np.zeros((200, 2)) # at a rate of 10 Hz, we will have 10 data points per second, making 200 over
+# 20 seconds
 
 while not rospy.core.is_shutdown():
 	rate = rospy.Rate(10) # will run at a rate of 10Hz
@@ -44,7 +48,7 @@ while not rospy.core.is_shutdown():
 	coords_timeline[-1] = coords
 	rate.sleep()
 	if reward_val != 0:
-		np.save("data/trajectory_data_new.npy", coords_timeline)
+		np.save("data/trajectory_data_straight_line.npy", coords_timeline)
 		print("reward found... saving trajectory data and quitting")
 		break
 
