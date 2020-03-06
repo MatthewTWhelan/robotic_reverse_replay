@@ -136,8 +136,8 @@ class PlotNetworkActivity:
 			if sum(self.all_cells_visited) == 100 and all_visited == False:
 				print("All cells visited in a time of ", time.time() - self.time_start, "s")
 				all_visited = True
-			# plot = np.reshape(self.place_cell_activities * 10000, (-1, 10))
-			plot = np.reshape(self.all_cells_visited, (-1, 10))
+			plot = np.reshape(self.place_cell_activities * 10000, (-1, 10))
+			# plot = np.reshape(self.all_cells_visited, (-1, 10))
 			plt.clf()
 			plt.imshow(plot, cmap='hot', interpolation='nearest', vmin=0, vmax=1)
 			plt.colorbar(label="Rate (Hz)")
