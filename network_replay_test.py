@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 '''
-This is a test script for my initial replay network. All it requires as input is some trajectory data.
+This is a test script for my initial replay network. All it requires as input is some trajectory data. As such,
+it does not run in real time with the robot simulator.
 '''
 
-# TODO need to add the synaptic plasticity rule during reverse replays
 
 import numpy as np
 import matplotlib.pyplot as plt
