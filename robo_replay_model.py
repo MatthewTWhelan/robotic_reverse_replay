@@ -11,6 +11,7 @@ from geometry_msgs.msg import Pose2D
 import numpy as np
 import os
 import time
+import matplotlib.pyplot as plt
 
 
 class RoboReplay():
@@ -34,8 +35,8 @@ class RoboReplay():
 
 		# model parameters and variable initial conditions
 		self.network_size = 100 # A square number
-		self.rho = 1
-		self.epsilon = 2  # Hz min threshold for rates
+		self.rho = 25
+		self.epsilon = 0.2  # Hz min threshold for rates
 		self.theta = 40  # Hz max threshold for rates
 		self.delta_t = 0.01  # s simulation time steps
 		self.w_inh = 0.1
@@ -47,8 +48,10 @@ class RoboReplay():
 		self.network_weights = self.initialise_weights()
 		self.stp_d = np.ones(self.network_size)
 		self.stp_f = np.ones(self.network_size) * 0.6
-		self.I_place = 0
+		self.I_place = np.zeros(self.network_size)
 		self.I_inh = 0
+
+		self.rate_plot_fig = plt.figure(1)
 
 	def update_reward(self, msg):
 		self.reward_val = msg.data
@@ -150,7 +153,7 @@ class RoboReplay():
 			if currents[i] < self.epsilon:
 				rates_update[i] = 0
 			else:
-				rates_update[i] = min(self.rho * (currents[i] - self.epsilon), self.rho * self.theta)
+				rates_update[i] = min(self.rho * (currents[i] - self.epsilon), 40)
 
 		return rates_update
 
@@ -171,9 +174,9 @@ class RoboReplay():
 		return currents_update
 
 	def update_intrinsic_e(self, intrinsic_e, delta_t, rates):
-		tau_e = 60  # s or 1 min
+		tau_e = 10  # s
 		sigma_ss = 0.1
-		sigma_max = 4
+		sigma_max = 6
 		r_sigma = 10
 		beta = 1
 		intrinsic_e_update = np.zeros(self.network_size)
@@ -201,14 +204,17 @@ class RoboReplay():
 		:return: two numpy arrays, 100x1 updated vectors of the STP variables
 		'''
 
-		tau_f = 0.6  # s
-		tau_d = 1  # s
+		tau_f = 1  # s
+		tau_d = 1.5  # s
 		U = 0.6
 		STP_F_next = np.zeros(self.network_size)
 		STP_D_next = np.zeros(self.network_size)
 		for f in range(self.network_size):
 			STP_D_next[f] = ((1.0 - STP_D[f]) / tau_d - rates[f] * STP_D[f] * STP_F[f]) * delta_t + STP_D[f]
 			STP_F_next[f] = ((U - STP_F[f]) / tau_f + U * (1 - STP_F[f]) * rates[f]) * delta_t + STP_F[f]
+		if max(STP_D_next) > 1 or min(STP_D_next) < 0 or max(STP_F_next) > 1 or min(STP_F_next) < 0:
+			print('STP value ouside of bounds')
+		# print(STP_F_next*STP_D_next)
 		return STP_D_next, STP_F_next
 
 	def compute_place_cell_activities(self, coord_x, coord_y, reward, movement=False):
@@ -223,7 +229,7 @@ class RoboReplay():
 		'''
 
 		d = 0.1  # m
-		no_cells_per_m = int(np.sqrt(self.network_size)) / 2
+		no_cells_per_m = np.sqrt(self.network_size) / 2
 		no_cell_it = int(np.sqrt(self.network_size))  # the number of cells along one row of the network
 		if movement or reward != 0:
 			C = 40  # Hz
@@ -238,11 +244,12 @@ class RoboReplay():
 					-1.0 / (2.0 * d ** 2.0) * np.dot((place - place_cell_field_location),
 					                                 (place - place_cell_field_location)))
 		cell_activities_array = cells_activity.flatten()
-
+		# print(cell_activities_array)
 		return cell_activities_array
 
 	def main(self):
 		t = 0 # s
+		t_replay = 0 # s
 		coords_prev = self.coords.copy()
 
 		while not rospy.core.is_shutdown():
@@ -251,11 +258,11 @@ class RoboReplay():
 			coords = self.coords.copy()
 			movement_x = coords[0] - coords_prev[0]
 			movement_y = coords[1] - coords_prev[1]
-			if movement_x > 0.002 or movement_y > 0.002: # at least a movement velocity of 0.002 / delta_t is required
+			if movement_x > 0.0 or movement_y > 0.0: # at least a movement velocity of 0.002 / delta_t is required
 				movement = True
 			else:
 				movement = False
-
+			movement = True
 			# Set current variable values to the previous ones
 			coords_prev = coords.copy()
 			rates_prev = self.rates.copy()
@@ -281,5 +288,33 @@ class RoboReplay():
 
 			else:
 				# Run a reverse replay
+				print('running reverse replay, now at ', t_replay, 's')
+				self.replay = True
+				t_replay += self.delta_t
+
+				if (t_replay < 0.1) or (1 < t_replay < 1.1) or (2 < t_replay < 2.1) or (3 < t_replay < 3.1):  # place
+					# pulse for 100ms bursts
+					# if (replay_step < 100):
+					I_place = self.I_place
+				else:
+					I_place = np.zeros(self.network_size)
+				# set variables at the next time step to the ones now
+				self.currents = self.update_currents(currents_prev, self.delta_t, intrinsic_e_prev,
+				                                     network_weights_prev, rates_prev, stp_d_prev, stp_f_prev,
+				                                     I_inh_prev, I_place, replay=self.replay)
+				self.rates = self.compute_rates(self.currents)
+				# self.intrinsic_e = self.update_intrinsic_e(intrinsic_e_prev, self.delta_t, rates_prev)
+				self.stp_d, self.stp_f = self.update_STP(stp_d_prev, stp_f_prev, self.delta_t, rates_prev)
+				self.I_inh = self.update_I_inh(I_inh_prev, self.delta_t, self.w_inh, rates_prev)
+
+			# print(max(self.currents))
+			# print(max(self.I_place))
+			np.save('data/intrinsic_e.npy', self.intrinsic_e)
+			np.save('data/rates_data.npy', self.rates)
+			np.save('data/place_data.npy', self.I_place)
 
 			rate.sleep()
+
+if __name__ == '__main__':
+	robo_replay = RoboReplay()
+	robo_replay.main()

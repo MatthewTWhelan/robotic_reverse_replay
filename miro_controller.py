@@ -87,6 +87,7 @@ class MiroController:
 				self.msg_wheels.twist.angular.z = alpha
 			if self.reward_val != 0:
 				print("Found a reward!")
+				exit()
 				print(self.reward_val)
 				self.victory_dance()
 				t_init = time.time()
