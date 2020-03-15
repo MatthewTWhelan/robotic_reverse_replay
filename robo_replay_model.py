@@ -10,12 +10,16 @@ from std_msgs.msg import UInt8
 from geometry_msgs.msg import Pose2D
 import numpy as np
 import os
-import time
-import matplotlib.pyplot as plt
+import signal
+import sys
+# import time
 
 
 class RoboReplay():
 	def __init__(self):
+		# system handling
+		signal.signal(signal.SIGINT, self.signal_handler)
+
 		# ROS stuff
 		rospy.init_node("Robo_Replay")
 
@@ -51,7 +55,18 @@ class RoboReplay():
 		self.I_place = np.zeros(self.network_size)
 		self.I_inh = 0
 
-		self.rate_plot_fig = plt.figure(1)
+		# lists for storing network values during trials. Saves to the data folder once script is exited via ctrl-c
+		# being pressed.
+		self.time_series = []
+		self.rates_series = []
+		self.intrinsic_e_series = []
+
+	def signal_handler(self, sig, frame):
+		print('\nSaving trial data')
+		np.save('data/time_series.npy', self.time_series)
+		np.save('data/rates_series.npy', self.rates_series)
+		np.save('data/intrinsic_e_series.npy', self.intrinsic_e_series)
+		sys.exit(0)
 
 	def update_reward(self, msg):
 		self.reward_val = msg.data
@@ -61,7 +76,6 @@ class RoboReplay():
 		self.coords[1] = msg.y
 
 	def initialise_weights(self):
-
 		# weights are initially all symmetrical, but made to obey the normalisation specification that
 		# sum_{k,l} w_{i,j}^{k,l} = 10
 		# In addition, as each cell is only connected to 8 others, it would be useless computing the
@@ -275,6 +289,7 @@ class RoboReplay():
 			network_weights_prev = self.network_weights.copy()
 
 			if self.reward_val == 0:
+				t_replay = 0
 				# Run standard activity during exploration
 				# Update the variables
 				self.currents = self.update_currents(currents_prev, self.delta_t, intrinsic_e_prev,
@@ -307,13 +322,16 @@ class RoboReplay():
 				self.stp_d, self.stp_f = self.update_STP(stp_d_prev, stp_f_prev, self.delta_t, rates_prev)
 				self.I_inh = self.update_I_inh(I_inh_prev, self.delta_t, self.w_inh, rates_prev)
 
-			# print(max(self.currents))
-			# print(max(self.I_place))
 			np.save('data/intrinsic_e.npy', self.intrinsic_e)
 			np.save('data/rates_data.npy', self.rates)
 			np.save('data/place_data.npy', self.I_place)
 
+			self.time_series.append(t)
+			self.rates_series.append(self.rates)
+			self.intrinsic_e_series.append(self.intrinsic_e)
+
 			rate.sleep()
+
 
 if __name__ == '__main__':
 	robo_replay = RoboReplay()
