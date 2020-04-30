@@ -4,14 +4,19 @@ from std_msgs.msg import UInt8, UInt16, UInt32, Float32MultiArray, UInt16MultiAr
 from geometry_msgs.msg import Pose2D, TwistStamped
 from sensor_msgs.msg import JointState
 import numpy as np
-from matplotlib import pyplot as plt
 import os
 import time
 import miro2 as miro
 
 class MiroController:
+	'''
+	An example controller for moving MiRo around the environment. MiRo wanders around the enviornment performing a
+	random walk and avoiding wall collisions. If MiRo finds the reward, it stops for a while whilst reverse replays
+	are performed, and then continues.
+	'''
 
 	def __init__(self):
+		print("Running Controller...")
 
 		rospy.init_node("miro_controller")
 
@@ -20,32 +25,28 @@ class MiroController:
 
 		# subscribe to miro's sensors package
 		topic = topic_base_name + "/sensors/package"
-		print ("subscribe", topic)
 		self.sub_package = rospy.Subscriber(topic, miro.msg.sensors_package, self.callback_sensors, queue_size=5,
 		                                    tcp_nodelay=True)
 		self.sonar_val = 1
 
 		# subscribe to Miro's body pose (x, y, theta)
 		topic = topic_base_name + "/sensors/body_pose"
-		print ("subscribe", topic)
 		self.sub_coords = rospy.Subscriber(topic, Pose2D, self.callback_body_pose, queue_size=5, tcp_nodelay=True)
 		self.coords = np.zeros(2)  # pos 0 is x coordinate and pos 1 is y coordinate
 
 		# subscribe to the reward value
 		topic = topic_base_name + "/reward_value"
-		print ("subscribe", topic)
 		self.sub_reward = rospy.Subscriber(topic, UInt8, self.update_reward, queue_size=5, tcp_nodelay=True)
 		self.reward_val = 0
+		self.found_reward = False
 
 		# publish to wheels
 		topic = topic_base_name + "/control/cmd_vel"
-		print ("publish", topic)
 		self.pub_wheels = rospy.Publisher(topic, TwistStamped, queue_size=0)
 		self.msg_wheels = TwistStamped()
 
 		# publish to kinematic joints
 		topic = topic_base_name + "/control/kinematic_joints"
-		print ("publish", topic)
 		self.pub_kin = rospy.Publisher(topic, JointState, queue_size=0)
 		self.msg_kin = JointState()
 		self.msg_kin.position = [0.0, np.radians(30.0), 0.0, 0.0]
@@ -80,15 +81,14 @@ class MiroController:
 			#print(int(t))
 			#
 			# print(self.sonar_val)
-			if self.sonar_val < 0.05:
+			if self.sonar_val < 0.03:
 				self.avoid_wall()
 				vel, alpha = self.random_walk()
 				self.msg_wheels.twist.linear.x = vel
 				self.msg_wheels.twist.angular.z = alpha
 			if self.reward_val != 0:
-				print("Found a reward!")
-				exit()
-				print(self.reward_val)
+				print("Found a reward of value %d!" %self.reward_val)
+				# exit()
 				self.victory_dance()
 				t_init = time.time()
 				continue
@@ -114,8 +114,11 @@ class MiroController:
 
 	def random_walk(self):
 		p_straight = 0.5
-		p_anticlock = 0.25
+		p_anticlock = (1 - p_straight) / 2
+		# p_straight = 0
+		# p_anticlock = 0
 		mag_turn = np.random.rand()
+		# mag_turn = 0.02
 		p = np.random.rand()
 		if p < p_straight:
 			vel = 0.2
@@ -141,16 +144,27 @@ class MiroController:
 			self.msg_wheels.twist.angular.z = 1.5
 		else:
 			self.msg_wheels.twist.angular.z = -1.5
-		while time.time() - t_init < 2:
+		while time.time() - t_init < 2.5:
 			self.pub_wheels.publish(self.msg_wheels)
 
 	def victory_dance(self):
 		t_init = time.time()
 		t = 0
-		while t < 10:
-			self.msg_wheels.twist.linear.x = 0
-			self.msg_wheels.twist.angular.z = 0
+		while t < 2:
+			self.msg_kin.position[1] = np.radians(t*15 + 30)
+			self.pub_kin.publish(self.msg_kin)
+			t = time.time() - t_init
+		while t < 4:
+			self.msg_kin.position[1] = np.radians(- (t - 2) * 15 + 60)
+			self.pub_kin.publish(self.msg_kin)
+			t = time.time() - t_init
+		while t < 6:
+			t = time.time() - t_init
+		while t < 8:
+			self.msg_wheels.twist.linear.x = 0.2
 			self.pub_wheels.publish(self.msg_wheels)
+			t = time.time() - t_init
+		time.sleep(2)
 
 	def head_shake_in_disappointment(self):
 		t_init = time.time()

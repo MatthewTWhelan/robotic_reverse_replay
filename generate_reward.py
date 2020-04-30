@@ -1,5 +1,9 @@
 #!/usr/bin/env python
-# license removed for brevity
+
+'''
+Used to generate a reward at a particular (x, y) location, and publishes this to a reward topic named reward_value.
+'''
+
 import rospy
 from std_msgs.msg import UInt8
 from geometry_msgs.msg import Pose2D
@@ -17,27 +21,26 @@ class RewardFunction:
 
 		# subscribe to robot position
 		topic = topic_base_name + "/sensors/body_pose"
-		print ("subscribe", topic)
 		sub_coords = rospy.Subscriber(topic, Pose2D, self.reward_value, queue_size=5, tcp_nodelay=True)
 		self.coords = np.zeros(2)  # pos 0 is x coordinate and pos 1 is y coordinate
 
 		# create reward value publisher
 		topic = topic_base_name + "/reward_value"
-		print ("publish", topic)
 		self.pub_reward = rospy.Publisher(topic, UInt8, queue_size=0)
 		self.reward = 0
 
-		# generate a new reward location
-		reward_location = np.random.randint(2, 7, (2))  # reward location is located at one of the place cell
-		# locations, but only in the inner 8 rows and columns
-		self.reward_location_xy = reward_location / 5.0 - 1
-		self.reward_location_xy = np.array(([0.8, 0.]))  # for testing
+		# # Generate a random reward location
+		# reward_location = np.random.randint(2, 7, (2))  # reward location is located at one of the place cell
+		# # locations, but only in the inner 8 rows and columns
+		# self.reward_location_xy = reward_location / 5.0 - 1
+
+		# Or to set the reward location yourself
+		self.reward_location_xy = np.array(([0., 0.6]))  # for testing
 		self.reward = 0
-		print("Reward located at ", self.reward_location_xy)
+		print("Reward generated at the location " + str((round(self.reward_location_xy[0],1), self.reward_location_xy[
+			1])))
 
 	def reward_value(self, msg):
-		# TODO set the reward value here once Miro has reached the reward
-
 		robot_position = msg
 		robot_position_x = robot_position.x
 		robot_position_y = robot_position.y
