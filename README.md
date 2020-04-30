@@ -1,4 +1,4 @@
-# Robot Reverse Replays
+# Robotic Reverse Replay
 
 Full code to support the robot reverse replay model using the MiRo robot.
 
